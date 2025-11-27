@@ -1,56 +1,41 @@
 # Mini Blockchain Implementation
 
+A simple blockchain implementation in Go for educational purposes. Features include automatic block generation, manual block creation, SHA-256 hashing, REST API endpoints, and live browser viewing with real-time updates.
+
 ## Attribution
 
-This is **not my original project**. This repository contains my implementation of the educational blockchain tutorial created by [nosequeldeebee](https://github.com/nosequeldeebee/blockchain-tutorial).
+This is an implementation of the educational blockchain tutorial by [nosequeldeebee](https://github.com/nosequeldeebee/blockchain-tutorial).
 
 **Original Resources:**
-- **GitHub Repository:** [blockchain-tutorial](https://github.com/nosequeldeebee/blockchain-tutorial)
-- **Blog Post:** [Code your own blockchain in less than 200 lines of Go](https://mycoralhealth.medium.com/code-your-own-blockchain-in-less-than-200-lines-of-go-e296282bcffc)
+- [GitHub Repository](https://github.com/nosequeldeebee/blockchain-tutorial)
+- [Blog Post](https://mycoralhealth.medium.com/code-your-own-blockchain-in-less-than-200-lines-of-go-e296282bcffc)
 
-## Learning Objectives
+## Features
 
-This implementation serves as a hands-on learning exercise to understand blockchain fundamentals. The primary goals are:
+- **Automatic block generation** - Creates new blocks every 2 seconds with random BPM values
+- **Manual block creation** - POST endpoint to create blocks with custom BPM values
+- **Live browser viewing** - View blocks in real-time at `/view` endpoint
+- **Real-time updates** - Server-Sent Events (SSE) stream blockchain updates to the browser
+- SHA-256 cryptographic hashing
+- REST API (GET/POST endpoints)
+- Longest chain consensus rule
 
-### Core Learning Goals
+## Usage
 
-1. **Create your own blockchain**
-   - Understand the basic structure and components of a blockchain
-   - Implement a simple blockchain from scratch in Go
+1. **Start the server**: Run `go run .` (ensure you have a `.env` file with `PORT=8080`)
 
-2. **Understand how hashing works in maintaining integrity of the blockchain**
-   - Learn how cryptographic hashing (SHA-256) ensures data integrity
-   - See how each block's hash depends on its content and the previous block's hash
-   - Understand how this creates an immutable chain
+2. **View blocks live in browser**: Navigate to `http://localhost:8080/view` to see blocks update in real-time
 
-3. **See how new blocks get added**
-   - Observe the block generation process
-   - Understand the relationship between consecutive blocks
-   - Learn how blocks are validated before being added to the chain
+3. **Create blocks manually**: Send a POST request to `http://localhost:8080/` with JSON body:
+   ```json
+   {"BPM": 72}
+   ```
 
-4. **See how tiebreakers get resolved when multiple nodes generate blocks**
-   - Understand the longest chain rule
-   - Learn how blockchain networks handle conflicts
-   - See the `replaceChain` function in action
+4. **Get blockchain**: GET `http://localhost:8080/` to retrieve the full blockchain as JSON
 
-5. **View your blockchain in a web browser**
-   - Interact with the blockchain through a REST API
-   - See the entire chain displayed as JSON
-   - Understand how blockchain data can be exposed via HTTP
+## Example Output
 
-6. **Write new blocks**
-   - Learn how to add new data to the blockchain
-   - Understand the POST request flow
-   - See how new blocks are created and validated
-
-7. **Get a foundational understanding of the blockchain**
-   - Build a solid conceptual foundation for blockchain technology
-   - Understand the core principles that apply to all blockchains
-   - Prepare for more advanced blockchain concepts
-
-## Example
-
-```bash
+```json
 [
  {
   "Index": 0,
@@ -65,18 +50,11 @@ This implementation serves as a hands-on learning exercise to understand blockch
   "BPM": 72,
   "Hash": "53e1031854f9984e7bd661d2df025447c9a236f64386a4249238e5d121992b1d",
   "PrevHash": ""
- },
- {
-  "Index": 2,
-  "Timestamp": "2025-11-20 14:15:25.8532583 -0300 -03 m=+181.562894401",
-  "BPM": 76,
-  "Hash": "621308d4de4e90f02a3006297baa45bfcd593fdc89fd15ee3bb2333303a5623c",
-  "PrevHash": "53e1031854f9984e7bd661d2df025447c9a236f64386a4249238e5d121992b1d"
  }
 ]
 ```
-
 ## Purpose
 
 This project is purely educational. It's designed to help understand blockchain concepts through hands-on implementation rather than focusing on production-ready code or advanced features.
+
 

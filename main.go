@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -24,6 +26,7 @@ type Block struct {
 }
 
 var Blockchain []Block
+var BlockchainMutex sync.Mutex
 
 func calculateHash(block Block) string {
 	record := string(block.Index) + block.Timestamp + string(block.BPM) + block.PrevHash
@@ -64,6 +67,8 @@ func isBlockValid(newBlock Block, oldBlock Block) bool {
 }
 
 func replaceChain(newBlocks []Block) {
+	BlockchainMutex.Lock()
+	defer BlockchainMutex.Unlock()
 	if len(newBlocks) > len(Blockchain) {
 		Blockchain = newBlocks
 	}
@@ -92,11 +97,18 @@ func makeMuxRouter() http.Handler {
 	muxRouter := mux.NewRouter()
 	muxRouter.HandleFunc("/", handleGetBlockchain).Methods("GET")
 	muxRouter.HandleFunc("/", handleWriteBlock).Methods("POST")
+	muxRouter.HandleFunc("/stream", handleStreamBlockchain).Methods("GET")
+	// Serve the HTML file for live viewing
+	muxRouter.HandleFunc("/view", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, "index.html")
+	})
 	return muxRouter
 }
 
 func handleGetBlockchain(w http.ResponseWriter, r *http.Request) {
+	BlockchainMutex.Lock()
 	bytes, err := json.MarshalIndent(Blockchain, "", " ")
+	BlockchainMutex.Unlock()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -117,18 +129,82 @@ func handleWriteBlock(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	newBlock, err := generateBlock(Blockchain[len(Blockchain)-1], m.BPM)
+	BlockchainMutex.Lock()
+	lastBlock := Blockchain[len(Blockchain)-1]
+	BlockchainMutex.Unlock()
+
+	newBlock, err := generateBlock(lastBlock, m.BPM)
 	if err != nil {
 		respondWithJSON(w, r, http.StatusInternalServerError, err)
 		return
 	}
-	if isBlockValid(newBlock, Blockchain[len(Blockchain)-1]) {
+	if isBlockValid(newBlock, lastBlock) {
+		BlockchainMutex.Lock()
 		newBlockchain := append(Blockchain, newBlock)
 		replaceChain(newBlockchain)
+		BlockchainMutex.Unlock()
 		spew.Dump(Blockchain)
 	}
 
 	respondWithJSON(w, r, http.StatusCreated, newBlock)
+}
+
+// handleStreamBlockchain handles Server-Sent Events (SSE) for live blockchain updates
+func handleStreamBlockchain(w http.ResponseWriter, r *http.Request) {
+	log.Println("SSE client connected from:", r.RemoteAddr)
+	// Set headers for SSE
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	// Get flusher to ensure we can flush data
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Create a ticker to send updates every second
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	// Send initial blockchain state
+	log.Println("Sending initial blockchain state")
+	sendBlockchainUpdate(w)
+	flusher.Flush()
+
+	// Keep connection alive and send updates
+	for {
+		select {
+		case <-ticker.C:
+			sendBlockchainUpdate(w)
+			flusher.Flush()
+		case <-r.Context().Done():
+			// Client disconnected
+			log.Println("SSE client disconnected")
+			return
+		}
+	}
+}
+
+// sendBlockchainUpdate sends the current blockchain state as an SSE event
+func sendBlockchainUpdate(w http.ResponseWriter) {
+	BlockchainMutex.Lock()
+	blockCount := len(Blockchain)
+	// Use Marshal without indent to avoid newline issues in SSE
+	bytes, err := json.Marshal(Blockchain)
+	BlockchainMutex.Unlock()
+
+	if err != nil {
+		log.Printf("Error marshaling blockchain: %v", err)
+		fmt.Fprintf(w, "event: error\ndata: %s\n\n", err.Error())
+		return
+	}
+
+	// Send as SSE event - single line JSON works best with SSE
+	fmt.Fprintf(w, "data: %s\n\n", string(bytes))
+	log.Printf("Sent blockchain update (%d blocks) via SSE", blockCount)
 }
 
 func respondWithJSON(w http.ResponseWriter, r *http.Request, code int, payload any) {
@@ -148,11 +224,18 @@ func main() {
 		log.Fatal(err)
 	}
 
-	go func() {
-		t := time.Now()
-		genesisBlock := Block{0, t.String(), 0, "", ""}
-		spew.Dump(genesisBlock)
-		Blockchain = append(Blockchain, genesisBlock)
-	}()
+	// Initialize genesis block synchronously
+	t := time.Now()
+	genesisBlock := Block{0, t.String(), 0, "", ""}
+	// Calculate hash for genesis block
+	genesisBlock.Hash = calculateHash(genesisBlock)
+	spew.Dump(genesisBlock)
+	BlockchainMutex.Lock()
+	Blockchain = append(Blockchain, genesisBlock)
+	BlockchainMutex.Unlock()
+
+	// Start the block generator
+	startBlockGenerator()
+
 	log.Fatal(run())
 }

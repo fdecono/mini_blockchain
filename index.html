@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Blockchain Viewer</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #1a1a1a;
+            color: #00ff00;
+        }
+        h1 {
+            text-align: center;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+        }
+        .status {
+            text-align: center;
+            margin: 20px 0;
+            padding: 10px;
+            background-color: #2a2a2a;
+            border-radius: 5px;
+        }
+        .connected {
+            color: #00ff00;
+        }
+        .disconnected {
+            color: #ff0000;
+        }
+        #blockchain {
+            background-color: #2a2a2a;
+            padding: 20px;
+            border-radius: 5px;
+            border: 1px solid #00ff00;
+            white-space: pre-wrap;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        .block-count {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 18px;
+            color: #ffff00;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔗 Live Blockchain Viewer</h1>
+    <div class="status">
+        <span id="status">Connecting...</span>
+    </div>
+    <div class="block-count">
+        Blocks: <span id="blockCount">0</span>
+    </div>
+    <div id="blockchain">Loading blockchain...</div>
+
+    <script>
+        const blockchainDiv = document.getElementById('blockchain');
+        const statusSpan = document.getElementById('status');
+        const blockCountSpan = document.getElementById('blockCount');
+        
+        // Get the port from the current URL or default to 8080
+        let port = window.location.port;
+        if (!port || port === '') {
+            port = '8080';
+        }
+        const host = window.location.hostname || 'localhost';
+        const streamUrl = `http://${host}:${port}/stream`;
+        
+        console.log('Connecting to SSE:', streamUrl);
+
+        const eventSource = new EventSource(streamUrl);
+
+        eventSource.onopen = function() {
+            console.log('SSE connection opened');
+            statusSpan.textContent = '🟢 Connected - Live Updates Active';
+            statusSpan.className = 'connected';
+        };
+
+        eventSource.onmessage = function(event) {
+            console.log('Received SSE message, length:', event.data.length);
+            try {
+                // SSE sends data with "data: " prefix, but EventSource automatically strips it
+                // Parse the JSON and then format it nicely for display
+                const blockchain = JSON.parse(event.data);
+                blockchainDiv.textContent = JSON.stringify(blockchain, null, 2);
+                blockCountSpan.textContent = blockchain.length;
+                console.log('Updated blockchain, block count:', blockchain.length);
+            } catch (e) {
+                console.error('Error parsing blockchain data:', e);
+                console.error('Raw data (first 500 chars):', event.data.substring(0, 500));
+                console.error('Raw data length:', event.data.length);
+                blockchainDiv.textContent = 'Error: ' + e.message + '\n\nRaw data (first 500 chars): ' + event.data.substring(0, 500);
+            }
+        };
+
+        eventSource.onerror = function(error) {
+            console.error('SSE error:', error);
+            statusSpan.textContent = '🔴 Disconnected - Check if server is running';
+            statusSpan.className = 'disconnected';
+        };
+    </script>
+</body>
+</html>
+
