@@ -5,12 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
@@ -18,19 +21,24 @@ import (
 	"github.com/joho/godotenv"
 )
 
+const difficulty = 2
+
 type Block struct {
-	Index     int
-	Timestamp string
-	BPM       int
-	Hash      string
-	PrevHash  string
+	Index      int
+	Timestamp  string
+	BPM        int
+	Hash       string
+	PrevHash   string
+	Nonce      string
+	Difficulty int
 }
 
 var Blockchain []Block
 var bcServer chan []Block
+var mutex = &sync.Mutex{}
 
 func calculateHash(block Block) string {
-	record := string(block.Index) + block.Timestamp + string(block.BPM) + block.PrevHash
+	record := string(block.Index) + block.Timestamp + string(block.BPM) + block.PrevHash + block.Nonce
 	h := sha256.New()
 	h.Write([]byte(record))
 	hashed := h.Sum(nil)
@@ -46,7 +54,21 @@ func generateBlock(oldBlock Block, BPM int) (Block, error) {
 	newBlock.Timestamp = t.String()
 	newBlock.BPM = BPM
 	newBlock.PrevHash = oldBlock.Hash
-	newBlock.Hash = calculateHash(newBlock)
+	newBlock.Difficulty = difficulty
+
+	for i := 0; ; i++ {
+		hex := fmt.Sprintf("%x", i)
+		newBlock.Nonce = hex
+		if !isHashValid(calculateHash(newBlock), newBlock.Difficulty) {
+			fmt.Println(calculateHash(newBlock), " do more work!")
+			time.Sleep(time.Second)
+			continue
+		} else {
+			fmt.Println(calculateHash(newBlock), " work done!")
+			newBlock.Hash = calculateHash(newBlock)
+			break
+		}
+	}
 
 	return newBlock, nil
 }
@@ -190,38 +212,27 @@ func handleConn(conn net.Conn) {
 	}
 }
 
+func isHashValid(hash string, difficulty int) bool {
+	prefix := strings.Repeat("0", difficulty)
+	return strings.HasPrefix(hash, prefix)
+}
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	bcServer = make(chan []Block)
-
-	// Create genesis block
-	t := time.Now()
-	genesisBlock := Block{0, t.String(), 0, "", ""}
-	spew.Dump(genesisBlock)
-	Blockchain = append(Blockchain, genesisBlock)
-
-	// Start HTTP server in a goroutine
 	go func() {
-		log.Fatal(run())
+		t := time.Now()
+		genesisBlock := Block{}
+		genesisBlock = Block{0, t.String(), 0, calculateHash(genesisBlock), "", "", difficulty}
+		spew.Dump(genesisBlock)
+
+		mutex.Lock()
+		Blockchain = append(Blockchain, genesisBlock)
+		mutex.Unlock()
 	}()
+	log.Fatal(run())
 
-	// Start TCP server
-	server, err := net.Listen("tcp", ":"+os.Getenv("TCP_PORT"))
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Println("TCP server listening on", os.Getenv("TCP_PORT"))
-	defer server.Close()
-
-	for {
-		conn, err := server.Accept()
-		if err != nil {
-			log.Fatal(err)
-		}
-		go handleConn(conn)
-	}
 }
